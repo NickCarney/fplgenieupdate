@@ -197,7 +197,13 @@ async function updatePlayerStats(connection, gameweekData) {
                     WHERE id = @player_id;
                 `;
 
-                const request = new sql.Request(connection);
+                const request = new sql.Request(query, (err) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve();
+                    }
+                });
 
                 request.addParameter('player_id', sql.TYPES.Int, element.id);
                 request.addParameter('event_points', sql.TYPES.Int, stats.total_points || 0);
@@ -219,13 +225,7 @@ async function updatePlayerStats(connection, gameweekData) {
                 request.addParameter('threat', sql.TYPES.Decimal, parseFloat(stats.threat) || 0);
                 request.addParameter('ict_index', sql.TYPES.Decimal, parseFloat(stats.ict_index) || 0);
 
-                request.query(query, (err) => {
-                    if (err) {
-                        reject(err);
-                    } else {
-                        resolve();
-                    }
-                });
+                connection.execSql(request);
             });
 
             updateCount++;

@@ -44,7 +44,16 @@ async function initDatabase() {
                 END
             `;
 
-            const request = new sql.Request(connection);
+            const request = new sql.Request(checkTableQuery, (err) => {
+                if (err) {
+                    console.error('Query error:', err.message);
+                    connection.close();
+                    reject(err);
+                    return;
+                }
+                connection.close();
+                resolve();
+            });
 
             request.on('row', (columns) => {
                 const message = columns[0].value;
@@ -54,18 +63,7 @@ async function initDatabase() {
                 }
             });
 
-            request.on('requestCompleted', () => {
-                connection.close();
-                resolve();
-            });
-
-            request.on('error', (err) => {
-                console.error('Query error:', err.message);
-                connection.close();
-                reject(err);
-            });
-
-            request.query(checkTableQuery);
+            connection.execSql(request);
         });
 
         connection.on('error', (err) => {
