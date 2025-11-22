@@ -5,6 +5,8 @@
   "main": "src/updateScript.js",
   "scripts": {
     "start": "node src/updateScript.js",
+    "init-db": "node src/initDatabase.js",
+    "update": "npm run init-db && npm start",
     "test": "echo \"No tests yet\" && exit 0"
   },
   "keywords": ["fpl", "fantasy-premier-league", "sql", "automation"],

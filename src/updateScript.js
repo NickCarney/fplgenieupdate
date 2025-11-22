@@ -3,7 +3,7 @@ const axios = require('axios');
 
 // Main execution
 async function main() {
-    console.log('FPL Update script started at:', new Date().toISOString());
+    console.log('*** Update script started at:', new Date().toISOString());
 
     try {
         // Check if any game is currently live
@@ -151,97 +151,98 @@ async function updateDatabase(gameweekData) {
     });
 }
 
-// Update individual player statistics
+// Update individual player statistics in the players table
 async function updatePlayerStats(connection, gameweekData) {
     const { gameweekId, elements } = gameweekData;
 
-    return new Promise((resolve, reject) => {
-        let updateCount = 0;
-        let errorCount = 0;
-        const totalElements = elements.length;
+    if (elements.length === 0) {
+        console.log('No player data to update');
+        return;
+    }
 
-        if (totalElements === 0) {
-            console.log('No player data to update');
-            resolve();
-            return;
-        }
+    console.log(`Updating ${elements.length} players...`);
 
-        console.log(`Updating ${totalElements} players...`);
+    let updateCount = 0;
+    let errorCount = 0;
 
-        // Process each player
-        elements.forEach((element) => {
-            const stats = element.stats;
+    // Process players sequentially to avoid overwhelming the connection
+    for (let i = 0; i < elements.length; i++) {
+        const element = elements[i];
+        const stats = element.stats;
 
-            const query = `
-                UPDATE PlayerStats
-                SET
-                    minutes = @minutes,
-                    goals_scored = @goals_scored,
-                    assists = @assists,
-                    clean_sheets = @clean_sheets,
-                    goals_conceded = @goals_conceded,
-                    own_goals = @own_goals,
-                    penalties_saved = @penalties_saved,
-                    penalties_missed = @penalties_missed,
-                    yellow_cards = @yellow_cards,
-                    red_cards = @red_cards,
-                    saves = @saves,
-                    bonus = @bonus,
-                    bps = @bps,
-                    influence = @influence,
-                    creativity = @creativity,
-                    threat = @threat,
-                    ict_index = @ict_index,
-                    total_points = @total_points
-                WHERE player_id = @player_id AND gameweek = @gameweek
-            `;
+        try {
+            await new Promise((resolve, reject) => {
+                const query = `
+                    UPDATE dbo.players
+                    SET
+                        event_points = @event_points,
+                        minutes = @minutes,
+                        goals_scored = @goals_scored,
+                        assists = @assists,
+                        clean_sheets = @clean_sheets,
+                        goals_conceded = @goals_conceded,
+                        own_goals = @own_goals,
+                        penalties_saved = @penalties_saved,
+                        penalties_missed = @penalties_missed,
+                        yellow_cards = @yellow_cards,
+                        red_cards = @red_cards,
+                        saves = @saves,
+                        bonus = @bonus,
+                        bps = @bps,
+                        influence = @influence,
+                        creativity = @creativity,
+                        threat = @threat,
+                        ict_index = @ict_index,
+                        last_updated = GETUTCDATE()
+                    WHERE id = @player_id;
+                `;
 
-            const request = new sql.Request(query, (err, rowCount) => {
-                if (err) {
-                    console.error(`Error updating player ${element.id}:`, err.message);
-                    errorCount++;
-                } else {
-                    updateCount++;
-                    if (updateCount % 100 === 0) {
-                        console.log(`Progress: ${updateCount}/${totalElements} players updated`);
-                    }
-                }
+                const request = new sql.Request(connection);
 
-                // Check if all updates are complete
-                if (updateCount + errorCount === totalElements) {
-                    console.log(`Update complete: ${updateCount} successful, ${errorCount} errors`);
-                    if (errorCount > 0) {
-                        reject(new Error(`Failed to update ${errorCount} players`));
+                request.addParameter('player_id', sql.TYPES.Int, element.id);
+                request.addParameter('event_points', sql.TYPES.Int, stats.total_points || 0);
+                request.addParameter('minutes', sql.TYPES.Int, stats.minutes || 0);
+                request.addParameter('goals_scored', sql.TYPES.Int, stats.goals_scored || 0);
+                request.addParameter('assists', sql.TYPES.Int, stats.assists || 0);
+                request.addParameter('clean_sheets', sql.TYPES.Int, stats.clean_sheets || 0);
+                request.addParameter('goals_conceded', sql.TYPES.Int, stats.goals_conceded || 0);
+                request.addParameter('own_goals', sql.TYPES.Int, stats.own_goals || 0);
+                request.addParameter('penalties_saved', sql.TYPES.Int, stats.penalties_saved || 0);
+                request.addParameter('penalties_missed', sql.TYPES.Int, stats.penalties_missed || 0);
+                request.addParameter('yellow_cards', sql.TYPES.Int, stats.yellow_cards || 0);
+                request.addParameter('red_cards', sql.TYPES.Int, stats.red_cards || 0);
+                request.addParameter('saves', sql.TYPES.Int, stats.saves || 0);
+                request.addParameter('bonus', sql.TYPES.Int, stats.bonus || 0);
+                request.addParameter('bps', sql.TYPES.Int, stats.bps || 0);
+                request.addParameter('influence', sql.TYPES.Decimal, parseFloat(stats.influence) || 0);
+                request.addParameter('creativity', sql.TYPES.Decimal, parseFloat(stats.creativity) || 0);
+                request.addParameter('threat', sql.TYPES.Decimal, parseFloat(stats.threat) || 0);
+                request.addParameter('ict_index', sql.TYPES.Decimal, parseFloat(stats.ict_index) || 0);
+
+                request.query(query, (err) => {
+                    if (err) {
+                        reject(err);
                     } else {
                         resolve();
                     }
-                }
+                });
             });
 
-            request.addParameter('player_id', sql.TYPES.Int, element.id);
-            request.addParameter('gameweek', sql.TYPES.Int, gameweekId);
-            request.addParameter('minutes', sql.TYPES.Int, stats.minutes);
-            request.addParameter('goals_scored', sql.TYPES.Int, stats.goals_scored);
-            request.addParameter('assists', sql.TYPES.Int, stats.assists);
-            request.addParameter('clean_sheets', sql.TYPES.Int, stats.clean_sheets);
-            request.addParameter('goals_conceded', sql.TYPES.Int, stats.goals_conceded);
-            request.addParameter('own_goals', sql.TYPES.Int, stats.own_goals);
-            request.addParameter('penalties_saved', sql.TYPES.Int, stats.penalties_saved);
-            request.addParameter('penalties_missed', sql.TYPES.Int, stats.penalties_missed);
-            request.addParameter('yellow_cards', sql.TYPES.Int, stats.yellow_cards);
-            request.addParameter('red_cards', sql.TYPES.Int, stats.red_cards);
-            request.addParameter('saves', sql.TYPES.Int, stats.saves);
-            request.addParameter('bonus', sql.TYPES.Int, stats.bonus);
-            request.addParameter('bps', sql.TYPES.Int, stats.bps);
-            request.addParameter('influence', sql.TYPES.VarChar, stats.influence);
-            request.addParameter('creativity', sql.TYPES.VarChar, stats.creativity);
-            request.addParameter('threat', sql.TYPES.VarChar, stats.threat);
-            request.addParameter('ict_index', sql.TYPES.VarChar, stats.ict_index);
-            request.addParameter('total_points', sql.TYPES.Int, stats.total_points);
+            updateCount++;
+            if (updateCount % 100 === 0) {
+                console.log(`Progress: ${updateCount}/${elements.length} players updated`);
+            }
+        } catch (err) {
+            console.error(`Error updating player ${element.id}:`, err.message);
+            errorCount++;
+        }
+    }
 
-            connection.execSql(request);
-        });
-    });
+    console.log(`Update complete: ${updateCount} successful, ${errorCount} errors`);
+
+    if (errorCount > 0) {
+        throw new Error(`Failed to update ${errorCount} players`);
+    }
 }
 
 // Run the script

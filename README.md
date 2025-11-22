@@ -1,10 +1,10 @@
 # FPL Genie Live Data Updater
 
-Automated system that updates your Azure SQL database with live Fantasy Premier League data every minute during active games.
+Automated system that updates your SQL database with live Fantasy Premier League data every 5 minutes during active games.
 
 ## Features
 
-- **Smart Scheduling**: Runs every minute via GitHub Actions
+- **Smart Scheduling**: Runs every 5 minutes via GitHub Actions
 - **Live Game Detection**: Only updates when FPL fixtures are actually in progress
 - **Efficient**: Skips updates when no games are live to save resources
 - **Free**: Uses GitHub Actions (unlimited minutes for public repos)
@@ -12,18 +12,18 @@ Automated system that updates your Azure SQL database with live Fantasy Premier 
 
 ## How It Works
 
-1. GitHub Actions triggers the script every minute
+1. GitHub Actions triggers the script every 5 minutes
 2. Script checks FPL API for the current gameweek
 3. Checks if any fixtures are live (started but not finished)
 4. If no live games → exits immediately (no database update)
 5. If live games detected → fetches live player stats from FPL API
-6. Updates `PlayerStats` table in your Azure SQL database
+6. Updates `dbo.players` table in your SQL database with live stats
 
 ## Prerequisites
 
-- Azure SQL Database with `PlayerStats` table
+- SQL Server database with FPL schema (see `database/schema.sql`)
 - GitHub account (for GitHub Actions)
-- SQL Server firewall configured to allow Azure services
+- SQL Server firewall configured to allow GitHub Actions connections
 
 ## Quick Setup
 
@@ -77,33 +77,25 @@ In Azure Portal:
 
 ## Database Schema
 
-The script expects a `PlayerStats` table with these columns:
+The script uses your existing FPL database schema. Run the `database/schema.sql` file to create:
 
-```sql
-CREATE TABLE PlayerStats (
-    player_id INT NOT NULL,
-    gameweek INT NOT NULL,
-    minutes INT,
-    goals_scored INT,
-    assists INT,
-    clean_sheets INT,
-    goals_conceded INT,
-    own_goals INT,
-    penalties_saved INT,
-    penalties_missed INT,
-    yellow_cards INT,
-    red_cards INT,
-    saves INT,
-    bonus INT,
-    bps INT,
-    influence VARCHAR(10),
-    creativity VARCHAR(10),
-    threat VARCHAR(10),
-    ict_index VARCHAR(10),
-    total_points INT,
-    PRIMARY KEY (player_id, gameweek)
-);
-```
+- `teams` - Premier League teams
+- `players` - All FPL players (this is what gets updated)
+- `events` - Gameweeks
+- `fixtures` - Match fixtures
+- `metadata` - Tracking information
+
+### What Gets Updated
+
+During live games, these fields in the `dbo.players` table are updated:
+
+- `event_points` - Current gameweek points
+- `minutes`, `goals_scored`, `assists`, `clean_sheets`
+- `goals_conceded`, `own_goals`, `penalties_saved/missed`
+- `yellow_cards`, `red_cards`, `saves`
+- `bonus`, `bps` (Bonus points system)
+- `influence`, `creativity`, `threat`, `ict_index`
+- `last_updated` timestamp
 
 ## Local Testing
 
@@ -164,9 +156,9 @@ node src/updateScript.js
 - Test connection from Azure Portal Query Editor
 
 ### "Failed to update X players"
-- Check PlayerStats table exists
-- Verify table schema matches expected structure
-- Ensure player_id and gameweek columns exist and match data types
+- Check `dbo.players` table exists (run `database/schema.sql`)
+- Verify database schema is set up correctly
+- Run `npm run init-db` to verify database connection
 
 ### GitHub Actions not running
 - Check if Actions are enabled for your repository
@@ -181,7 +173,7 @@ For private repositories: 2,000 free minutes/month (more than enough for this us
 
 ## Schedule
 
-The workflow runs every minute: `*/1 * * * *`
+The workflow runs every 5 minutes: `*/5 * * * *`
 
 **Note**: GitHub Actions scheduled workflows may have a slight delay (1-5 minutes) during high-load times, but this shouldn't affect functionality since games last 90+ minutes.
 
