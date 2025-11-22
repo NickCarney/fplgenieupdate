@@ -3,7 +3,7 @@ name: Update FPL Live Data
 on:
   schedule:
     # Runs every minute
-    - cron: '*/1 * * * *'
+    - cron: "*/5 * * * *"
   workflow_dispatch: # Allows manual trigger from Actions tab
 
 jobs:
@@ -17,8 +17,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "22"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -29,5 +29,5 @@ jobs:
           SQL_DATABASE: ${{ secrets.SQL_DATABASE }}
           SQL_USER: ${{ secrets.SQL_USER }}
           SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}
-          SQL_ENCRYPT: 'true'
+          SQL_ENCRYPT: "true"
         run: node src/updateScript.js
