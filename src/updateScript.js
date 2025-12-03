@@ -1,5 +1,4 @@
 const sql = require('tedious');
-const axios = require('axios');
 
 // Main execution
 async function main() {
@@ -125,16 +124,25 @@ function validateData(bootstrapData, gameweekData, fixturesData) {
 // Check if any FPL game is currently live
 async function checkIfGameIsLive() {
     try {
-        const response = await axios.get('https://fantasy.premierleague.com/api/bootstrap-static/', {
-            timeout: 30000,
-            validateStatus: (status) => status === 200
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-        if (!response.data || !response.data.events) {
+        const response = await fetch('https://fantasy.premierleague.com/api/bootstrap-static/', {
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            throw new Error(`API returned status ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (!data || !data.events) {
             throw new Error('Bootstrap API returned invalid events data');
         }
 
-        const events = response.data.events;
+        const events = data.events;
 
         // Find current gameweek
         const currentGameweek = events.find(event => event.is_current);
@@ -147,16 +155,23 @@ async function checkIfGameIsLive() {
         console.log(`Current gameweek: ${currentGameweek.id}`);
 
         // Check if any fixture in current gameweek is live
-        const fixturesResponse = await axios.get(`https://fantasy.premierleague.com/api/fixtures/?event=${currentGameweek.id}`, {
-            timeout: 30000,
-            validateStatus: (status) => status === 200
-        });
+        const controller2 = new AbortController();
+        const timeoutId2 = setTimeout(() => controller2.abort(), 30000);
 
-        if (!fixturesResponse.data || !Array.isArray(fixturesResponse.data)) {
-            throw new Error('Fixtures API returned invalid data');
+        const fixturesResponse = await fetch(`https://fantasy.premierleague.com/api/fixtures/?event=${currentGameweek.id}`, {
+            signal: controller2.signal
+        });
+        clearTimeout(timeoutId2);
+
+        if (!fixturesResponse.ok) {
+            throw new Error(`API returned status ${fixturesResponse.status}: ${fixturesResponse.statusText}`);
         }
 
-        const fixtures = fixturesResponse.data;
+        const fixtures = await fixturesResponse.json();
+
+        if (!fixtures || !Array.isArray(fixtures)) {
+            throw new Error('Fixtures API returned invalid data');
+        }
 
         // A fixture is live if it has started but not finished
         const liveFixtures = fixtures.filter(fixture =>
@@ -172,9 +187,10 @@ async function checkIfGameIsLive() {
         return false;
 
     } catch (error) {
-        console.error('Error checking if game is live:', error.message);
-        if (error.response) {
-            console.error(`API returned status ${error.response.status}: ${error.response.statusText}`);
+        if (error.name === 'AbortError') {
+            console.error('Request timeout while checking if game is live');
+        } else {
+            console.error('Error checking if game is live:', error.message);
         }
         throw error;
     }
@@ -184,21 +200,31 @@ async function checkIfGameIsLive() {
 async function getBootstrapData() {
     try {
         console.log('Fetching bootstrap data...');
-        const response = await axios.get('https://fantasy.premierleague.com/api/bootstrap-static/', {
-            timeout: 30000,
-            validateStatus: (status) => status === 200 // Only accept 200 as valid
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-        if (!response.data) {
+        const response = await fetch('https://fantasy.premierleague.com/api/bootstrap-static/', {
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            throw new Error(`API returned status ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (!data) {
             throw new Error('Bootstrap API returned empty response');
         }
 
-        console.log(`Retrieved ${response.data.teams?.length || 0} teams, ${response.data.elements?.length || 0} players, ${response.data.events?.length || 0} events`);
-        return response.data;
+        console.log(`Retrieved ${data.teams?.length || 0} teams, ${data.elements?.length || 0} players, ${data.events?.length || 0} events`);
+        return data;
     } catch (error) {
-        console.error('Error fetching bootstrap data:', error.message);
-        if (error.response) {
-            console.error(`API returned status ${error.response.status}: ${error.response.statusText}`);
+        if (error.name === 'AbortError') {
+            console.error('Request timeout while fetching bootstrap data');
+        } else {
+            console.error('Error fetching bootstrap data:', error.message);
         }
         throw error;
     }
@@ -207,16 +233,25 @@ async function getBootstrapData() {
 // Get current gameweek data from FPL API
 async function getCurrentGameweekData() {
     try {
-        const bootstrapResponse = await axios.get('https://fantasy.premierleague.com/api/bootstrap-static/', {
-            timeout: 30000,
-            validateStatus: (status) => status === 200
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-        if (!bootstrapResponse.data || !bootstrapResponse.data.events) {
+        const bootstrapResponse = await fetch('https://fantasy.premierleague.com/api/bootstrap-static/', {
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!bootstrapResponse.ok) {
+            throw new Error(`API returned status ${bootstrapResponse.status}: ${bootstrapResponse.statusText}`);
+        }
+
+        const bootstrapData = await bootstrapResponse.json();
+
+        if (!bootstrapData || !bootstrapData.events) {
             throw new Error('Bootstrap API returned invalid events data');
         }
 
-        const currentGameweek = bootstrapResponse.data.events.find(event => event.is_current);
+        const currentGameweek = bootstrapData.events.find(event => event.is_current);
 
         if (!currentGameweek) {
             throw new Error('No current gameweek found');
@@ -225,26 +260,36 @@ async function getCurrentGameweekData() {
         console.log(`Fetching live data for gameweek ${currentGameweek.id}...`);
 
         // Get live gameweek data
-        const liveResponse = await axios.get(`https://fantasy.premierleague.com/api/event/${currentGameweek.id}/live/`, {
-            timeout: 30000,
-            validateStatus: (status) => status === 200
-        });
+        const controller2 = new AbortController();
+        const timeoutId2 = setTimeout(() => controller2.abort(), 30000);
 
-        if (!liveResponse.data || !liveResponse.data.elements) {
+        const liveResponse = await fetch(`https://fantasy.premierleague.com/api/event/${currentGameweek.id}/live/`, {
+            signal: controller2.signal
+        });
+        clearTimeout(timeoutId2);
+
+        if (!liveResponse.ok) {
+            throw new Error(`API returned status ${liveResponse.status}: ${liveResponse.statusText}`);
+        }
+
+        const liveData = await liveResponse.json();
+
+        if (!liveData || !liveData.elements) {
             throw new Error('Live API returned invalid player data');
         }
 
-        console.log(`Retrieved live stats for ${liveResponse.data.elements.length} players`);
+        console.log(`Retrieved live stats for ${liveData.elements.length} players`);
 
         return {
             gameweekId: currentGameweek.id,
-            elements: liveResponse.data.elements // Player stats
+            elements: liveData.elements // Player stats
         };
 
     } catch (error) {
-        console.error('Error fetching gameweek data:', error.message);
-        if (error.response) {
-            console.error(`API returned status ${error.response.status}: ${error.response.statusText}`);
+        if (error.name === 'AbortError') {
+            console.error('Request timeout while fetching gameweek data');
+        } else {
+            console.error('Error fetching gameweek data:', error.message);
         }
         throw error;
     }
@@ -254,21 +299,31 @@ async function getCurrentGameweekData() {
 async function getFixturesData() {
     try {
         console.log('Fetching fixtures data...');
-        const response = await axios.get('https://fantasy.premierleague.com/api/fixtures/', {
-            timeout: 30000,
-            validateStatus: (status) => status === 200
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-        if (!response.data || !Array.isArray(response.data)) {
+        const response = await fetch('https://fantasy.premierleague.com/api/fixtures/', {
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            throw new Error(`API returned status ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (!data || !Array.isArray(data)) {
             throw new Error('Fixtures API returned invalid data');
         }
 
-        console.log(`Retrieved ${response.data.length} fixtures`);
-        return response.data;
+        console.log(`Retrieved ${data.length} fixtures`);
+        return data;
     } catch (error) {
-        console.error('Error fetching fixtures data:', error.message);
-        if (error.response) {
-            console.error(`API returned status ${error.response.status}: ${error.response.statusText}`);
+        if (error.name === 'AbortError') {
+            console.error('Request timeout while fetching fixtures data');
+        } else {
+            console.error('Error fetching fixtures data:', error.message);
         }
         throw error;
     }
