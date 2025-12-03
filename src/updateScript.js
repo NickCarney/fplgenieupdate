@@ -21,6 +21,12 @@ async function main() {
         const gameweekData = await getCurrentGameweekData();
         const fixturesData = await getFixturesData();
 
+        // Validate data before updating
+        if (!validateData(bootstrapData, gameweekData, fixturesData)) {
+            console.error('Data validation failed. Skipping database update to prevent data corruption.');
+            process.exit(1);
+        }
+
         // Update database
         await updateDatabase(bootstrapData, gameweekData, fixturesData);
 
@@ -33,10 +39,101 @@ async function main() {
     }
 }
 
+// Validate that all required data is present and valid
+function validateData(bootstrapData, gameweekData, fixturesData) {
+    console.log('Validating data before database update...');
+
+    // Validate bootstrap data
+    if (!bootstrapData) {
+        console.error('Bootstrap data is null or undefined');
+        return false;
+    }
+
+    if (!bootstrapData.teams || !Array.isArray(bootstrapData.teams) || bootstrapData.teams.length === 0) {
+        console.error('Invalid or empty teams data');
+        return false;
+    }
+
+    if (!bootstrapData.elements || !Array.isArray(bootstrapData.elements) || bootstrapData.elements.length === 0) {
+        console.error('Invalid or empty players (elements) data');
+        return false;
+    }
+
+    if (!bootstrapData.events || !Array.isArray(bootstrapData.events) || bootstrapData.events.length === 0) {
+        console.error('Invalid or empty events data');
+        return false;
+    }
+
+    if (!bootstrapData.element_types || !Array.isArray(bootstrapData.element_types) || bootstrapData.element_types.length === 0) {
+        console.error('Invalid or empty element_types data');
+        return false;
+    }
+
+    // Validate gameweek data
+    if (!gameweekData) {
+        console.error('Gameweek data is null or undefined');
+        return false;
+    }
+
+    if (!gameweekData.gameweekId || typeof gameweekData.gameweekId !== 'number') {
+        console.error('Invalid gameweek ID');
+        return false;
+    }
+
+    if (!gameweekData.elements || !Array.isArray(gameweekData.elements) || gameweekData.elements.length === 0) {
+        console.error('Invalid or empty gameweek elements data');
+        return false;
+    }
+
+    // Validate fixtures data
+    if (!fixturesData || !Array.isArray(fixturesData) || fixturesData.length === 0) {
+        console.error('Invalid or empty fixtures data');
+        return false;
+    }
+
+    // Sanity checks on data quality
+    const expectedTeamsCount = 20; // Premier League has 20 teams
+    const minPlayersCount = 400; // Should have at least 400 players
+    const minEventsCount = 38; // Premier League has 38 gameweeks
+
+    if (bootstrapData.teams.length !== expectedTeamsCount) {
+        console.warn(`Warning: Expected ${expectedTeamsCount} teams, but got ${bootstrapData.teams.length}`);
+        // Don't fail, just warn as this might be legitimate in off-season
+    }
+
+    if (bootstrapData.elements.length < minPlayersCount) {
+        console.error(`Invalid player count: Expected at least ${minPlayersCount} players, but got ${bootstrapData.elements.length}`);
+        return false;
+    }
+
+    if (bootstrapData.events.length < minEventsCount) {
+        console.warn(`Warning: Expected ${minEventsCount} events, but got ${bootstrapData.events.length}`);
+        // Don't fail, just warn as this might be early season
+    }
+
+    console.log('Data validation passed:');
+    console.log(`- ${bootstrapData.teams.length} teams`);
+    console.log(`- ${bootstrapData.elements.length} players`);
+    console.log(`- ${bootstrapData.events.length} events`);
+    console.log(`- ${bootstrapData.element_types.length} element types`);
+    console.log(`- ${fixturesData.length} fixtures`);
+    console.log(`- ${gameweekData.elements.length} live player stats for gameweek ${gameweekData.gameweekId}`);
+
+    return true;
+}
+
 // Check if any FPL game is currently live
 async function checkIfGameIsLive() {
     try {
-        const response = await axios.get('https://fantasy.premierleague.com/api/bootstrap-static/');
+        const response = await axios.get('https://fantasy.premierleague.com/api/bootstrap-static/', {
+            timeout: 30000,
+            validateStatus: (status) => status === 200
+        });
+
+        if (!response.data || !response.data.events) {
+            throw new Error('Bootstrap API returned invalid events data');
+        }
+
         const events = response.data.events;
 
         // Find current gameweek
@@ -50,7 +147,15 @@ async function checkIfGameIsLive() {
         console.log(`Current gameweek: ${currentGameweek.id}`);
 
         // Check if any fixture in current gameweek is live
-        const fixturesResponse = await axios.get(`https://fantasy.premierleague.com/api/fixtures/?event=${currentGameweek.id}`);
+        const fixturesResponse = await axios.get(`https://fantasy.premierleague.com/api/fixtures/?event=${currentGameweek.id}`, {
+            timeout: 30000,
+            validateStatus: (status) => status === 200
+        });
+
+        if (!fixturesResponse.data || !Array.isArray(fixturesResponse.data)) {
+            throw new Error('Fixtures API returned invalid data');
+        }
+
         const fixtures = fixturesResponse.data;
 
         // A fixture is live if it has started but not finished
@@ -68,6 +173,9 @@ async function checkIfGameIsLive() {
 
     } catch (error) {
         console.error('Error checking if game is live:', error.message);
+        if (error.response) {
+            console.error(`API returned status ${error.response.status}: ${error.response.statusText}`);
+        }
         throw error;
     }
 }
@@ -76,11 +184,22 @@ async function checkIfGameIsLive() {
 async function getBootstrapData() {
     try {
         console.log('Fetching bootstrap data...');
-        const response = await axios.get('https://fantasy.premierleague.com/api/bootstrap-static/');
-        console.log(`Retrieved ${response.data.teams.length} teams, ${response.data.elements.length} players, ${response.data.events.length} events`);
+        const response = await axios.get('https://fantasy.premierleague.com/api/bootstrap-static/', {
+            timeout: 30000,
+            validateStatus: (status) => status === 200 // Only accept 200 as valid
+        });
+
+        if (!response.data) {
+            throw new Error('Bootstrap API returned empty response');
+        }
+
+        console.log(`Retrieved ${response.data.teams?.length || 0} teams, ${response.data.elements?.length || 0} players, ${response.data.events?.length || 0} events`);
         return response.data;
     } catch (error) {
         console.error('Error fetching bootstrap data:', error.message);
+        if (error.response) {
+            console.error(`API returned status ${error.response.status}: ${error.response.statusText}`);
+        }
         throw error;
     }
 }
@@ -88,7 +207,15 @@ async function getBootstrapData() {
 // Get current gameweek data from FPL API
 async function getCurrentGameweekData() {
     try {
-        const bootstrapResponse = await axios.get('https://fantasy.premierleague.com/api/bootstrap-static/');
+        const bootstrapResponse = await axios.get('https://fantasy.premierleague.com/api/bootstrap-static/', {
+            timeout: 30000,
+            validateStatus: (status) => status === 200
+        });
+
+        if (!bootstrapResponse.data || !bootstrapResponse.data.events) {
+            throw new Error('Bootstrap API returned invalid events data');
+        }
+
         const currentGameweek = bootstrapResponse.data.events.find(event => event.is_current);
 
         if (!currentGameweek) {
@@ -98,7 +225,14 @@ async function getCurrentGameweekData() {
         console.log(`Fetching live data for gameweek ${currentGameweek.id}...`);
 
         // Get live gameweek data
-        const liveResponse = await axios.get(`https://fantasy.premierleague.com/api/event/${currentGameweek.id}/live/`);
+        const liveResponse = await axios.get(`https://fantasy.premierleague.com/api/event/${currentGameweek.id}/live/`, {
+            timeout: 30000,
+            validateStatus: (status) => status === 200
+        });
+
+        if (!liveResponse.data || !liveResponse.data.elements) {
+            throw new Error('Live API returned invalid player data');
+        }
 
         console.log(`Retrieved live stats for ${liveResponse.data.elements.length} players`);
 
@@ -109,6 +243,9 @@ async function getCurrentGameweekData() {
 
     } catch (error) {
         console.error('Error fetching gameweek data:', error.message);
+        if (error.response) {
+            console.error(`API returned status ${error.response.status}: ${error.response.statusText}`);
+        }
         throw error;
     }
 }
@@ -117,11 +254,22 @@ async function getCurrentGameweekData() {
 async function getFixturesData() {
     try {
         console.log('Fetching fixtures data...');
-        const response = await axios.get('https://fantasy.premierleague.com/api/fixtures/');
+        const response = await axios.get('https://fantasy.premierleague.com/api/fixtures/', {
+            timeout: 30000,
+            validateStatus: (status) => status === 200
+        });
+
+        if (!response.data || !Array.isArray(response.data)) {
+            throw new Error('Fixtures API returned invalid data');
+        }
+
         console.log(`Retrieved ${response.data.length} fixtures`);
         return response.data;
     } catch (error) {
         console.error('Error fetching fixtures data:', error.message);
+        if (error.response) {
+            console.error(`API returned status ${error.response.status}: ${error.response.statusText}`);
+        }
         throw error;
     }
 }
